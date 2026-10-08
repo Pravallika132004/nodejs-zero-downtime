@@ -63,8 +63,25 @@ echo ""
 echo "[5/7] Updating Nginx configuration..."
 
 # Replace v1 upstreams with v2 upstreams
-sed -i 's/zero-downtime-app1:3000/zero-downtime-v2-1:3000/g' nginx/nginx.conf
-sed -i 's/zero-downtime-app2:3000/zero-downtime-v2-2:3000/g' nginx/nginx.conf
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path("nginx/nginx.conf")
+
+with path.open("r+", encoding="utf-8") as f:
+    content = f.read()
+    content = content.replace(
+        "zero-downtime-app1:3000",
+        "zero-downtime-v2-1:3000"
+    )
+    content = content.replace(
+        "zero-downtime-app2:3000",
+        "zero-downtime-v2-2:3000"
+    )
+    f.seek(0)
+    f.write(content)
+    f.truncate()
+PY
 
 echo ""
 echo "Host Nginx configuration:"

@@ -42,7 +42,7 @@ services:
     ports:
       - "8888:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx:/etc/nginx:ro
     depends_on:
       app1:
         condition: service_healthy

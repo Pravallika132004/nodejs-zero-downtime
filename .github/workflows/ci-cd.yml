@@ -1,0 +1,115 @@
+name: Node.js Zero-Downtime CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+
+  test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Docker image
+        run: docker build -t nodejs-zero-downtime:v1 .
+
+  deployment:
+    name: Zero-Downtime Deployment
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Start v1 application
+        run: docker compose up -d --build
+
+      - name: Wait for services
+        run: sleep 15
+
+      - name: Check containers
+        run: docker compose ps
+
+      - name: Validate v1
+        run: |
+          curl --fail http://localhost:8888/health
+          echo "v1 health check passed"
+
+      - name: Continuous health validation
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/health)
+            echo "Request $i -> HTTP $code"
+
+            if [ "$code" != "200" ]; then
+              echo "Health check failed"
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+      - name: Deploy v2
+        run: |
+          if ! sh ./deploy/deploy.sh; then
+            echo "Deployment failed - starting rollback"
+            sh ./deploy/rollback.sh
+            exit 1
+          fi
+
+      - name: Validate v2
+        run: |
+          response=$(curl --fail http://localhost:8888/health)
+          echo "$response"
+          echo "$response" | grep '"version":"v2"'
+
+      - name: Continuous v2 validation
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/health)
+            echo "Request $i -> HTTP $code"
+
+            if [ "$code" != "200" ]; then
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+      - name: Test rollback
+        run: sh ./deploy/rollback.sh
+
+      - name: Validate rollback
+        run: |
+          response=$(curl --fail http://localhost:8888/health)
+          echo "$response"
+          echo "$response" | grep '"version":"v1"'
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose down || true
+          docker rm -f zero-downtime-v2-1 zero-downtime-v2-2 2>/dev/null || true
+          docker rm -f zero-downtime-app1 zero-downtime-app2 2>/dev/null || true

@@ -24,6 +24,7 @@ echo "[3/6] Starting v2 containers..."
 docker run -d \
   --name zero-downtime-v2-1 \
   --network "$NETWORK" \
+  -e NODE_ENV=production \
   -e VERSION=v2 \
   -e PORT=3000 \
   "$IMAGE"
@@ -31,6 +32,7 @@ docker run -d \
 docker run -d \
   --name zero-downtime-v2-2 \
   --network "$NETWORK" \
+  -e NODE_ENV=production \
   -e VERSION=v2 \
   -e PORT=3000 \
   "$IMAGE"
@@ -50,17 +52,34 @@ docker exec zero-downtime-nginx \
 
 echo ""
 echo ""
-echo "[5/6] Validating and reloading Nginx..."
+echo "v2 containers are healthy."
+
+echo ""
+echo "[5/6] Switching Nginx traffic to v2..."
+
+sed -i 's/zero-downtime-app1:3000/zero-downtime-v2-1:3000/g' nginx/nginx.conf
+sed -i 's/zero-downtime-app2:3000/zero-downtime-v2-2:3000/g' nginx/nginx.conf
 
 docker exec zero-downtime-nginx nginx -t
 docker exec zero-downtime-nginx nginx -s reload
 
 echo ""
+echo "Nginx switched to v2."
+
+echo ""
 echo "[6/6] Verifying production endpoint..."
+
+sleep 2
 
 curl -f http://localhost:8888/health
 
 echo ""
+echo ""
+echo "Removing old v1 containers..."
+
+docker rm -f zero-downtime-app1 2>/dev/null || true
+docker rm -f zero-downtime-app2 2>/dev/null || true
+
 echo ""
 echo "========================================"
 echo " Zero-Downtime Deployment Successful"

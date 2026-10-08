@@ -42,15 +42,19 @@ docker exec zero-downtime-nginx \
   wget -qO- http://zero-downtime-app2:3000/health
 
 echo ""
-echo ""
-echo "[4/4] Rollback containers are ready."
+echo "[4/4] Switching Nginx traffic back to v1..."
 
-echo ""
-echo "Update nginx.conf to use:"
-echo "server zero-downtime-app1:3000;"
-echo "server zero-downtime-app2:3000;"
+sed -i \
+  's/zero-downtime-v2-1/zero-downtime-app1/g;
+   s/zero-downtime-v2-2/zero-downtime-app2/g' \
+  nginx/nginx.conf
+
+docker exec zero-downtime-nginx nginx -t
+docker exec zero-downtime-nginx nginx -s reload
+
+curl -f http://localhost:8888/health
 
 echo ""
 echo "========================================"
-echo " Rollback Completed"
+echo " Rollback Completed Successfully"
 echo "========================================"

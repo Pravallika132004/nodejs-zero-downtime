@@ -10,18 +10,18 @@ echo " Node.js Zero-Downtime Deployment"
 echo "========================================"
 
 echo ""
-echo "[1/6] Building v2 Docker image..."
+echo "[1/7] Building v2 Docker image..."
 
 docker build -t "$IMAGE" .
 
 echo ""
-echo "[2/6] Removing old v2 containers if present..."
+echo "[2/7] Removing old v2 containers if present..."
 
 docker rm -f zero-downtime-v2-1 2>/dev/null || true
 docker rm -f zero-downtime-v2-2 2>/dev/null || true
 
 echo ""
-echo "[3/6] Starting v2 containers..."
+echo "[3/7] Starting v2 containers..."
 
 docker run -d \
   --name zero-downtime-v2-1 \
@@ -44,13 +44,15 @@ echo "Waiting for v2 containers..."
 sleep 5
 
 echo ""
-echo "[4/6] Checking v2 health..."
+echo "[4/7] Checking v2 containers directly..."
 
+echo "Checking v2-1:"
 docker exec zero-downtime-nginx \
   wget -qO- http://zero-downtime-v2-1:3000/health
 
 echo ""
 
+echo "Checking v2-2:"
 docker exec zero-downtime-nginx \
   wget -qO- http://zero-downtime-v2-2:3000/health
 
@@ -59,10 +61,28 @@ echo ""
 echo "v2 containers are healthy."
 
 echo ""
-echo "[5/6] Switching Nginx traffic to v2..."
+echo "[5/7] Switching Nginx configuration to v2..."
 
 sed -i 's/zero-downtime-app1:3000/zero-downtime-v2-1:3000/g' nginx/nginx.conf
 sed -i 's/zero-downtime-app2:3000/zero-downtime-v2-2:3000/g' nginx/nginx.conf
+
+echo ""
+echo "Nginx configuration on host:"
+cat nginx/nginx.conf
+
+echo ""
+echo "Checking that v2 upstreams exist..."
+
+grep -q "zero-downtime-v2-1:3000" nginx/nginx.conf
+grep -q "zero-downtime-v2-2:3000" nginx/nginx.conf
+
+echo "v2 upstream configuration confirmed."
+
+echo ""
+echo "Checking Nginx configuration inside container..."
+
+docker exec zero-downtime-nginx \
+  nginx -T 2>&1 | grep "zero-downtime-v2"
 
 echo ""
 echo "Testing Nginx configuration..."
@@ -75,13 +95,12 @@ echo "Reloading Nginx..."
 docker exec zero-downtime-nginx nginx -s reload
 
 echo ""
-echo "Nginx switched to v2."
+echo "Nginx reload completed."
+
+sleep 3
 
 echo ""
-echo "[6/6] Verifying production endpoint..."
-
-echo ""
-echo "Waiting for Nginx to route traffic to v2..."
+echo "[6/7] Verifying v2 production endpoint..."
 
 V2_READY=false
 
@@ -101,14 +120,19 @@ for i in $(seq 1 15); do
         break
     fi
 
-    echo "v2 is not ready yet. Waiting 2 seconds..."
+    echo "v2 not active yet. Waiting 2 seconds..."
     sleep 2
 
 done
 
 if [ "$V2_READY" != "true" ]; then
+
     echo ""
     echo "ERROR: v2 production endpoint did not become healthy."
+
+    echo ""
+    echo "Current Nginx configuration:"
+    docker exec zero-downtime-nginx nginx -T 2>&1 | grep -E "upstream|zero-downtime"
 
     echo ""
     echo "v2 container status:"
@@ -129,7 +153,7 @@ curl --fail --max-time 10 http://localhost:8888/health
 
 echo ""
 echo ""
-echo "Removing old v1 containers..."
+echo "[7/7] Removing old v1 containers..."
 
 docker rm -f zero-downtime-app1 2>/dev/null || true
 docker rm -f zero-downtime-app2 2>/dev/null || true
